@@ -19,7 +19,7 @@ interface cue {
 }
 
 // For now, let's just operate on a known short VTT
-const PLACEHOLDER_VTT = 'https://customer-igynxd2rwhmuoxw8.cloudflarestream.com/86319f6f2c108ce2487d2a9bb6be9234/text/en.vtt?p=eyJ0eXBlIjoiZmlsZSIsInZpZGVvSUQiOiI4NjMxOWY2ZjJjMTA4Y2UyNDg3ZDJhOWJiNmJlOTIzNCIsIm93bmVySUQiOjM0MjA5Mjc1LCJjcmVhdG9ySUQiOiJzdHJlYW0iLCJ0cmFjayI6ImY1NTIwYWRiNjNiYzY2Njg3ZGNkM2ViMDZmMjUxYzQ4IiwicmVuZGl0aW9uIjoiNzM4NDE1MjE5IiwibXV4aW5nIjoiNzkyOTc3MjI2In0&s=w7Y2YgLCkkwEwpNwCWIWwqM3TFfDmcKAwqIiWcKoWkrDvMKOwqhpNB3Ck2c';
+const PLACEHOLDER_VTT = 'https://customer-igynxd2rwhmuoxw8.cloudflarestream.com/b8d6856117263fbb0af673be613aafbd/text/en.vtt?p=eyJ0eXBlIjoiZmlsZSIsInZpZGVvSUQiOiJiOGQ2ODU2MTE3MjYzZmJiMGFmNjczYmU2MTNhYWZiZCIsIm93bmVySUQiOjM0MjA5Mjc1LCJjcmVhdG9ySUQiOiJzdHJlYW0iLCJ0cmFjayI6ImYwNzM5MDdmNWU1MjE2YTMzNjYwZjY1ZWFmZGI0YjkyIiwicmVuZGl0aW9uIjoiNjg5NTQ3NjkzIiwibXV4aW5nIjoiNzQzMzk4NjQzIn0&s=w4B5wpjDgMKpwrkwCMOBwpnDsw1mHsKYwqnCvcOyw4c4w68eAMODBcKyCsO7PMKDG8KS';
 
 /**
  *
@@ -55,7 +55,7 @@ const vttToCues = (input: string): cue[] => {
 	const number = parseInt(id);
 
 	// @TODO: Eliminate positioning markers
-	const [start, end] = time.split(' --> ');
+	const [start, end] = time.split(' --> ').map(x => convertTime(x));
 
   const content = text
     // Eliminate newlines
@@ -72,6 +72,21 @@ const vttToCues = (input: string): cue[] => {
 	};
 };
 
+/**
+ * Convert a timestamp to seconds
+ *
+ * @param input (string) HH:MM:SS.mmm
+ * @returns (float) SS.mmm
+ */
+const convertTime = (input: string): number => {
+	return input
+		.split(':')
+		.map(x => parseFloat(x))
+		.reverse()
+		.reduce((a, c, i): number => {
+			return a + (c * (60**i));
+	}, 0);
+}
 
 export default {
 	async fetch(request: Request, env, ctx): Promise<Response> {
@@ -82,6 +97,6 @@ export default {
 		const captions = vttToCues(input);
 
 		// Done: Return what we have.
-		return new Response(captions.map(c => c.content).join('\n'));
+		return new Response(captions.map(c => (`${c.start} --> ${c.end}: ${c.content}`)).join('\n'));
 	},
 };
