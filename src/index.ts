@@ -12,10 +12,10 @@
  */
 
 interface cue {
-	number: number;
-	start: string;
-	end: string;
-	content: string;
+  number: number;
+  start: string;
+  end: string;
+  content: string;
 }
 
 // For now, let's just operate on a known short VTT
@@ -27,7 +27,7 @@ const PLACEHOLDER_VTT = 'https://customer-igynxd2rwhmuoxw8.cloudflarestream.com/
  * @returns
  */
 const vttToCues = (input: string): cue[] => {
-	// @TODO: Retain the meta info at the top somehow
+  // @TODO: Retain the meta info at the top somehow
   const [meta, ...stack] = input.split('\n\n');
   return stack.map(i => convertCue(i));
 };
@@ -52,24 +52,24 @@ const vttToCues = (input: string): cue[] => {
 
   const [id, time, ...text] = input.split('\n');
 
-	const number = parseInt(id);
+  const number = parseInt(id);
 
-	// @TODO: Eliminate positioning markers
-	const [start, end] = time.split(' --> ').map(x => convertTime(x));
+  // @TODO: Eliminate positioning markers
+  const [start, end] = time.split(' --> ').map(x => convertTime(x));
 
   const content = text
     // Eliminate newlines
     .join(' ')
-		// @TODO: Eliminate formatting markers
+    // @TODO: Eliminate formatting markers
   ;
 
 
   return {
-		number,
-		start,
-		end,
-		content,
-	};
+    number,
+    start,
+    end,
+    content,
+  };
 };
 
 /**
@@ -79,24 +79,24 @@ const vttToCues = (input: string): cue[] => {
  * @returns (float) SS.mmm
  */
 const convertTime = (input: string): number => {
-	return input
-		.split(':')
-		.map(x => parseFloat(x))
-		.reverse()
-		.reduce((a, c, i): number => {
-			return a + (c * (60**i));
-	}, 0);
+  return input
+    .split(':')
+    .map(x => parseFloat(x))
+    .reverse()
+    .reduce((a, c, i): number => {
+      return a + (c * (60**i));
+  }, 0);
 }
 
 export default {
-	async fetch(request: Request, env, ctx): Promise<Response> {
-		// Step One: Get our input. For now, use a known placeholder and skip error handling.
-		const input = await fetch(PLACEHOLDER_VTT).then(res => res.text());
+  async fetch(request: Request, env, ctx): Promise<Response> {
+    // Step One: Get our input. For now, use a known placeholder and skip error handling.
+    const input = await fetch(PLACEHOLDER_VTT).then(res => res.text());
 
-		// Step Two: Parse the input so we have text
-		const captions = vttToCues(input);
+    // Step Two: Parse the input so we have text
+    const captions = vttToCues(input);
 
-		// Done: Return what we have.
-		return new Response(captions.map(c => (`${c.start} --> ${c.end}: ${c.content}`)).join('\n'));
-	},
+    // Done: Return what we have.
+    return new Response(captions.map(c => (`${c.start} --> ${c.end}: ${c.content}`)).join('\n'));
+  },
 };
