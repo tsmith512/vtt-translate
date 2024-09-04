@@ -13,8 +13,8 @@
 
 interface cue {
   number: number;
-  start: string;
-  end: string;
+  start: number;
+  end: number;
   content: string;
 }
 
@@ -96,7 +96,21 @@ export default {
     // Step Two: Parse the input so we have text
     const captions = vttToCues(input);
 
+    // Step Three: What if we just translate the cue-stack as-is?
+    await Promise.all(captions.map(async (q) => {
+      const translation = await env.AI.run(
+        "@cf/meta/m2m100-1.2b",
+        {
+          text: q.content,
+          source_lang: "en",
+          target_lang: "es",
+        }
+      );
+
+      q.content = translation?.translated_text ?? q.content;
+    }));
+
     // Done: Return what we have.
-    return new Response(captions.map(c => (`${c.start} --> ${c.end}: ${c.content}`)).join('\n'));
+    return new Response(captions.map(c => (`#${c.number}: ${c.start} --> ${c.end}: ${c.content.toString()}`)).join('\n'));
   },
 };
