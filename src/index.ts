@@ -63,7 +63,6 @@ const vttToCues = (input: string): cue[] => {
     // @TODO: Eliminate formatting markers
   ;
 
-
   return {
     number,
     start,
@@ -88,6 +87,48 @@ const convertTime = (input: string): number => {
   }, 0);
 }
 
+const consolidate = (stack: cue[]): cue[] => {
+  const result: cue[] = [];
+
+  // As we concat cues, we need to keep track of what we've started
+  let newNumber: number = stack[0].number;
+  let newStart: number = 0;
+  let newContent: string = '';
+  let cueLength = 0;
+
+  for (let thisIndex = 0; thisIndex < stack.length; thisIndex++) {
+    const thisCue = stack[thisIndex];
+
+    // Are we starting a new cue?
+    if (cueLength === 0) {
+      newNumber = thisCue.number;
+      newStart = thisCue.start;
+      newContent = '';
+    }
+
+    cueLength++;
+    newContent += ' ' + thisCue.content;
+
+    // Does this cue's content have a period?
+    const sentenceBreak = (thisCue.content.match(/\.+/g) != null);
+
+    if (sentenceBreak || thisIndex === stack.length) {
+      result.push({
+        number: newNumber,
+        start: newStart,
+        end: thisCue.end,
+        content: newContent,
+      });
+
+      cueLength = 0;
+    } else {
+      continue;
+    }
+  }
+
+  return result;
+}
+
 export default {
   async fetch(request: Request, env, ctx): Promise<Response> {
     // Step One: Get our input. For now, use a known placeholder and skip error handling.
@@ -96,21 +137,24 @@ export default {
     // Step Two: Parse the input so we have text
     const captions = vttToCues(input);
 
-    // Step Three: What if we just translate the cue-stack as-is?
-    await Promise.all(captions.map(async (q) => {
-      const translation = await env.AI.run(
-        "@cf/meta/m2m100-1.2b",
-        {
-          text: q.content,
-          source_lang: "en",
-          target_lang: "es",
-        }
-      );
+    // Can we group sentences?
+    const sentences = consolidate(captions);
 
-      q.content = translation?.translated_text ?? q.content;
-    }));
+    // Step Three: What if we just translate the cue-stack as-is?
+    // await Promise.all(captions.map(async (q) => {
+    //   const translation = await env.AI.run(
+    //     "@cf/meta/m2m100-1.2b",
+    //     {
+    //       text: q.content,
+    //       source_lang: "en",
+    //       target_lang: "es",
+    //     }
+    //   );
+
+    //   q.content = translation?.translated_text ?? q.content;
+    // }));
 
     // Done: Return what we have.
-    return new Response(captions.map(c => (`#${c.number}: ${c.start} --> ${c.end}: ${c.content.toString()}`)).join('\n'));
+    return new Response(sentences.map(c => (`#${c.number}: ${c.start} --> ${c.end}: ${c.content.toString()}`)).join('\n'));
   },
 };
