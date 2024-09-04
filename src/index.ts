@@ -106,13 +106,16 @@ const consolidate = (stack: cue[]): cue[] => {
       newContent = '';
     }
 
-    cueLength++;
-    newContent += ' ' + thisCue.content;
+    // Break this up by sentence-ending punctuation.
+    const sentences = thisCue.content.split(/(?<=[.?!]+)/g);
 
-    // Does this cue's content have a period?
-    const sentenceBreak = (thisCue.content.match(/\.+/g) != null);
+    // Cut here; we have one fragment and it has a sentence terminator.
+    const cut = sentences.length === 1 && thisCue.content.match(/[.?!]/);
 
-    if (sentenceBreak || thisIndex === stack.length) {
+    // If we need to cut or we're at the end, finish up.
+    if (cut || thisIndex === stack.length) {
+      newContent += ' ' + thisCue.content;
+
       result.push({
         number: newNumber,
         start: newStart,
@@ -121,7 +124,44 @@ const consolidate = (stack: cue[]): cue[] => {
       });
 
       cueLength = 0;
-    } else {
+    }
+
+    // We have 1 or more sentence breakers, split this cue.
+    else if (sentences.length > 1) {
+      // Save the last fragment for later
+      const nextContent = sentences.pop();
+
+      // Put holdover content and all-but-last fragment into the content
+      newContent += ' ' + sentences.join(' ');
+
+      const thisLength = (thisCue.end - thisCue.start) / 2;
+
+      result.push({
+        number: newNumber,
+        start: newStart,
+        end: thisCue.start + (thisLength / 2),
+        content: newContent,
+      });
+
+      // Treat the next one as a holdover
+      cueLength = 1;
+      // @ts-ignore --- this will be okay, we know we have enough
+      newContent = nextContent;
+      // Start the next consolidated cue halfway into this cue's original duration
+      newStart = thisCue.start + (thisLength / 2) + 0.001;
+      // Set the next consolidate cue's number to this cue's number
+      newNumber = thisCue.number;
+    }
+
+    // We only have 1 fragment and we aren't supposed to cut; run it in
+    else if (sentences.length === 1) {
+      cueLength++;
+      newContent += ' ' + thisCue.content;
+    }
+
+    // We shouldn't get here... right?
+    else {
+      console.log('unknown state');
       continue;
     }
   }
@@ -141,18 +181,18 @@ export default {
     const sentences = consolidate(captions);
 
     // Step Three: What if we just translate the cue-stack as-is?
-    // await Promise.all(captions.map(async (q) => {
-    //   const translation = await env.AI.run(
-    //     "@cf/meta/m2m100-1.2b",
-    //     {
-    //       text: q.content,
-    //       source_lang: "en",
-    //       target_lang: "es",
-    //     }
-    //   );
+    await Promise.all(sentences.map(async (q) => {
+      const translation = await env.AI.run(
+        "@cf/meta/m2m100-1.2b",
+        {
+          text: q.content,
+          source_lang: "en",
+          target_lang: "es",
+        }
+      );
 
-    //   q.content = translation?.translated_text ?? q.content;
-    // }));
+      q.content = translation?.translated_text ?? q.content;
+    }));
 
     // Done: Return what we have.
     return new Response(sentences.map(c => (`#${c.number}: ${c.start} --> ${c.end}: ${c.content.toString()}`)).join('\n'));
