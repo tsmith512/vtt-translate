@@ -1,21 +1,32 @@
 /**
- * Welcome to Cloudflare Workers! This is your first worker.
+ * VTT-Translate Proof-of-Concept. Use Cloudflare Workers AI to translate a
+ * video caption text track and return a usable VTT output.
  *
- * - Run `npm run dev` in your terminal to start a development server
- * - Open a browser tab at http://localhost:8787/ to see your worker in action
- * - Run `npm run deploy` to publish your worker
+ * Lots of assumptions, no real input/output mechanics, zero error handling.
+ * Proceed with caution.
  *
- * Bind resources to your worker in `wrangler.toml`. After adding bindings, a type definition for the
- * `Env` object can be regenerated with `npm run cf-typegen`.
- *
- * Learn more at https://developers.cloudflare.com/workers/
+ * Run it at https://vtt-translate.tsmithcreative.workers.dev
  */
 
+/**
+ * The components of a caption/subtitle cue
+ */
 interface cue {
-  number: number;
-  start: number;
-  end: number;
-  content: string;
+  // 1
+  // 00:00:03.395 --> 00:00:06.728
+  // Captain's Log, Stardate 44286.5.
+
+  // 2
+  // 00:00:06.765 --> 00:00:09.165
+  // The <i>Enterprise</i> is conducting
+  // a security survey
+
+  number: number; // What number cue it is; generally 1-based
+  start: number; // A float, seconds into the video when it is raised, inclusive
+  end: number; // A float, seconds into the video when it is closed, exclusive
+  content: string; // What's in it
+  // @TODO: VTT allows for positioning offsets after the timecode line. Content
+  // can be multiline and contain limited HTML formatting tags.
 }
 
 // For now, let's just operate on a known short VTT
@@ -33,6 +44,9 @@ const PLACEHOLDER_VTT =
 
 
 /**
+ * Strip off the header and process each cue in a VTT file
+ *
+ * @TODO: Should keep that header to re-use as-is, it can contain time offset data
  *
  * @param input (string) A formatted VTT file
  * @returns
@@ -44,23 +58,12 @@ const vttToCues = (input: string): cue[] => {
 };
 
 /**
- * Convert a single SRT cue to a VTT cue, with some limited sanitation
+ * Unpack a single VTT cue text into stuctured object.
  *
  * @param input (string) A single VTT cue
  * @returns (cue) Object with cue info parsed
  */
- const convertCue = (input: string): cue => {
-  // EXAMPLES:
-
-  // 1
-  // 00:00:03.395 --> 00:00:06.728
-  // Captain's Log, Stardate 44286.5.
-
-  // 2
-  // 00:00:06.765 --> 00:00:09.165
-  // The <i>Enterprise</i> is conducting
-  // a security survey
-
+const convertCue = (input: string): cue => {
   const [id, time, ...text] = input.split('\n');
 
   const number = parseInt(id);
@@ -98,6 +101,12 @@ const convertTime = (input: string): number => {
   }, 0);
 };
 
+/**
+ * Convert seconds into timecode
+ *
+ * @param seconds (float)
+ * @returns (string) padded timecode HH:MM:SS.mmm
+ */
 const convertSeconds = (seconds: number): string => {
   let minutes = Math.floor(seconds / 60);
   let hours = Math.floor(minutes / 60);
@@ -114,10 +123,16 @@ const convertSeconds = (seconds: number): string => {
   ].join(':');
 };
 
+/**
+ * Try to concatenate cues to keep sentences together.
+ *
+ * @param stack (cue[]) a stack of input cues
+ * @returns (cue[]) a stack of cues that group sentences together
+ */
 const consolidate = (stack: cue[]): cue[] => {
   const result: cue[] = [];
 
-  // As we concat cues, we need to keep track of what we've started
+  // As we concat cues, we need to keep track of where we started
   let newNumber: number = stack[0].number;
   let newStart: number = 0;
   let newContent: string = '';
@@ -138,6 +153,7 @@ const consolidate = (stack: cue[]): cue[] => {
 
     // Cut here; we have one fragment and it has a sentence terminator.
     const cut = sentences.length === 1 && thisCue.content.match(/[.?!]/);
+    // @TODO: At cueLength >= 5, maybe cut regardless?
 
     // If we need to cut or we're at the end, finish up.
     if (cut || thisIndex === stack.length) {
@@ -166,7 +182,7 @@ const consolidate = (stack: cue[]): cue[] => {
       result.push({
         number: newNumber,
         start: newStart,
-        end: thisCue.start + (thisLength / 2),
+        end: thisCue.start + (thisLength / 2), // End this cue early
         content: newContent,
       });
 
@@ -176,7 +192,7 @@ const consolidate = (stack: cue[]): cue[] => {
       newContent = nextContent;
       // Start the next consolidated cue halfway into this cue's original duration
       newStart = thisCue.start + (thisLength / 2) + 0.001;
-      // Set the next consolidate cue's number to this cue's number
+      // Set the next consolidated cue's number to this cue's number
       newNumber = thisCue.number;
     }
 
@@ -193,13 +209,22 @@ const consolidate = (stack: cue[]): cue[] => {
     }
   }
 
-  // Renumber the cue stack
+  // Renumber the cue stack so it's consecutive.
+  // @TODO: Use the same starting number as the original input
   return result.map((q, i) => {
     q.number = i + 1;
     return q;
   });
 };
 
+/**
+ * Combine a VTT file out of a cue stack
+ *
+ * @TODO: That header metadata I dropped
+ *
+ * @param input (cue[]) cue stack
+ * @returns (string) VTT file as a string
+ */
 const cuesToVTT = (input: cue[]): string => {
   const output = input.map(cue => {
     return [
@@ -213,7 +238,7 @@ const cuesToVTT = (input: cue[]): string => {
 };
 
 export default {
-  async fetch(request: Request, env, ctx): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: any): Promise<Response> {
     // Step One: Get our input. For now, use a known placeholder and skip error handling.
     const input = await fetch(PLACEHOLDER_VTT).then(res => res.text());
 
@@ -223,7 +248,7 @@ export default {
     // Can we group sentences?
     const sentences = consolidate(captions);
 
-    // Step Three: What if we just translate the cue-stack as-is?
+    // Step Three: Translate the text content
     await Promise.all(sentences.map(async (q) => {
       const translation = await env.AI.run(
         "@cf/meta/m2m100-1.2b",
@@ -234,7 +259,10 @@ export default {
         }
       );
 
+      // Fallback to the content we had if translation fails.
       q.content = translation?.translated_text ?? q.content;
+
+      // @TODO: AI.run() seems to throw an exception if it fails. try/catch{}?
     }));
 
     // Done: Return what we have.
