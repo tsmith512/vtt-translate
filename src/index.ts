@@ -99,9 +99,9 @@ const convertSeconds = (seconds: number): string => {
   return [
     hours.toString().padStart(2, '0'),
     minutes.toString().padStart(2, '0'),
-    `${seconds.toString().padStart(2, '0')}.${Math.floor(ms * 1000)}`
+    `${seconds.toString().padStart(2, '0')}.${Math.floor(ms * 1000).toString().padStart(3, '0')}`
   ].join(':');
-}
+};
 
 const consolidate = (stack: cue[]): cue[] => {
   const result: cue[] = [];
