@@ -85,6 +85,22 @@ const convertTime = (input: string): number => {
     .reduce((a, c, i): number => {
       return a + (c * (60**i));
   }, 0);
+};
+
+const convertSeconds = (seconds: number): string => {
+  let minutes = Math.floor(seconds / 60);
+  let hours = Math.floor(minutes / 60);
+  seconds -= (minutes * 60);
+  minutes -= (hours * 60);
+
+  let ms = seconds % 1;
+  seconds -= ms;
+
+  return [
+    hours.toString().padStart(2, '0'),
+    minutes.toString().padStart(2, '0'),
+    `${seconds.toString().padStart(2, '0')}.${Math.floor(ms * 1000)}`
+  ].join(':');
 }
 
 const consolidate = (stack: cue[]): cue[] => {
@@ -166,8 +182,24 @@ const consolidate = (stack: cue[]): cue[] => {
     }
   }
 
-  return result;
-}
+  // Renumber the cue stack
+  return result.map((q, i) => {
+    q.number = i + 1;
+    return q;
+  });
+};
+
+const cuesToVTT = (input: cue[]): string => {
+  const output = input.map(cue => {
+    return [
+      cue.number,
+      `${convertSeconds(cue.start)} --> ${convertSeconds(cue.end)}`,
+      cue.content
+    ].join('\n');
+  });
+
+  return ['WEBVTT', ...output].join('\n\n') + '\n';
+};
 
 export default {
   async fetch(request: Request, env, ctx): Promise<Response> {
@@ -195,6 +227,6 @@ export default {
     }));
 
     // Done: Return what we have.
-    return new Response(sentences.map(c => (`#${c.number}: ${c.start} --> ${c.end}: ${c.content.toString()}`)).join('\n'));
+    return new Response(cuesToVTT(sentences));
   },
 };
